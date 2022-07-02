@@ -197,6 +197,7 @@ UPROGS=\
 	$U/_sleep\
 	$U/_primes\
 	$U/_find\
+	$U/_xargs\
 
 
 
@@ -339,6 +340,7 @@ grade:
 	@$(MAKE) clean || \
           (echo "'make clean' failed.  HINT: Do you have another running instance of xv6?" && exit 1)
 	./grade-lab-$(LAB) $(GRADEFLAGS)
+
 
 ##
 ## FOR web handin
