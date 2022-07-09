@@ -82,6 +82,7 @@ fileclose(struct file *f)
   }
 }
 
+
 // Get metadata about file f.
 // addr is a user virtual address, pointing to a struct stat.
 int

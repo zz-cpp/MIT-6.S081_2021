@@ -223,7 +223,7 @@ uchar initcode[] = {
 
 // Set up first user process.
 void
-userinit(void)
+  userinit(void)
 {
   struct proc *p;
 
@@ -291,6 +291,9 @@ fork(void)
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
+  
+  // copy the trace mask from the parent to the child process
+  np->mask = p->mask;
 
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
@@ -653,4 +656,17 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+int
+nproc(void) {
+
+ struct proc *p;
+ uint64 count = 0;
+   for(p = proc; p < &proc[NPROC]; p++) {
+    if(p->state != UNUSED){
+        count++;
+    }
+ }
+ return count;
 }
