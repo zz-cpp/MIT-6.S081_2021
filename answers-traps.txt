@@ -1,0 +1,7 @@
+1. the a registers are used to function. a2 register contain 13.
+2. call f function:   printf("%d %d\n", f(8)+1, 13).
+3. printf located in 0x 630.
+4. ra is 0x 38.
+5. He110 World(base); 0001 0011 1110 0011 0010 0110(little-edian)->0110 0010 0011 1110 0011 0001(big-edian)= 0x 623E31 (print as one-byte) ; 1110 0001 0001 0000(little-edain) ->0000 0001 0001 1110(big-edain) not need change the 57616 as it print  as four-byte.
+    -the 57616 
+6. it will print the value of buffer in fprinf.
