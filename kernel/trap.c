@@ -11,6 +11,10 @@ uint ticks;
 
 extern char trampoline[], uservec[], userret[];
 
+extern uint64 refcount[];
+
+extern char end[];
+
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
 
@@ -27,6 +31,44 @@ void
 trapinithart(void)
 {
   w_stvec((uint64)kernelvec);
+}
+
+int
+cowfault(pagetable_t pagetable, uint64 va){
+  pte_t* pte;
+  uint64 flag;
+  uint64 pa1;
+  uint64 pa2;
+
+  if(va >= MAXVA){
+    return -1;
+  }
+
+  if((pte = walk(pagetable,va,0))==0){
+    return -1;
+  }
+
+  // check flag
+  flag = PTE_FLAGS(*pte);
+  if((flag & PTE_U) == 0 || (flag & PTE_V) == 0 ){
+    return -1;
+  }
+
+  if((pa2 =(uint64) kalloc()) == 0){
+      return -1;
+  }
+
+  pa1 = PTE2PA(*pte);
+
+  memmove((void *)pa2,(void *)pa1,PGSIZE);
+  
+  // change pte in pagetable
+  *pte = PA2PTE(pa2) | (PTE_V | PTE_U | PTE_W | PTE_R | PTE_X);
+
+  kfree((void *)pa1);
+
+  return 0;
+
 }
 
 //
@@ -67,7 +109,13 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  } else if(r_scause() == 15){
+    if(cowfault(p->pagetable,r_stval()) < 0){
+      p->killed = 1;
+    }
+  }      
+            
+   else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
