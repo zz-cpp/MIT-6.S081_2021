@@ -1,0 +1,21 @@
+{
+    "files.associations": {
+        "user.h": "c",
+        "fs.h": "c",
+        "stat.h": "c",
+        "types.h": "c",
+        "fcntl.h": "c",
+        "param.h": "c",
+        "proc.h": "c",
+        "sysinfo.h": "c",
+        "memlayout.h": "c",
+        "cmath": "c",
+        "exception": "c",
+        "*.tcc": "c",
+        "defs.h": "c",
+        "riscv.h": "c",
+        "spinlock.h": "c",
+        "elf.h": "c",
+        "date.h": "c"
+    }
+}
