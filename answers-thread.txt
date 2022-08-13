@@ -1,0 +1,4 @@
+Why are there missing keys with 2 threads, but not with 1 thread?
+    answer: 2 threads may cause data race when one thread is calling insert() without finishing and interrupted. the other one is also calling.
+            the insert:  e->next = n will cause two new entry connect to one entry and then *p = e will cause one entry will be overfloped even though their
+            key is different (same key cause overflope is no problem). 
