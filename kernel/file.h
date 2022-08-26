@@ -24,9 +24,9 @@ struct inode {
   short type;         // copy of disk inode
   short major;
   short minor;
-  short nlink;
+  short nlink;        // number of directory entries.
   uint size;
-  uint addrs[NDIRECT+1];
+  uint addrs[NDIRECT+ 1 + 1];   // address of
 };
 
 // map major device number to device functions.

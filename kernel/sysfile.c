@@ -116,6 +116,7 @@ sys_fstat(void)
 }
 
 // Create the path new as a link to the same inode as old.
+// Find a  parent dirctory of the old and then where create a new directory entry containing the new name.
 uint64
 sys_link(void)
 {
@@ -145,7 +146,7 @@ sys_link(void)
   if((dp = nameiparent(new, name)) == 0)
     goto bad;
   ilock(dp);
-  if(dp->dev != ip->dev || dirlink(dp, name, ip->inum) < 0){
+  if(dp->dev != ip->dev || dirlink(dp, name, ip->inum) < 0){ // ip->parent diectory of old
     iunlockput(dp);
     goto bad;
   }
@@ -241,7 +242,7 @@ bad:
 static struct inode*
 create(char *path, short type, short major, short minor)
 {
-  struct inode *ip, *dp;
+  struct inode *ip, *dp; // dp is parent directory. ip is it's child directory.
   char name[DIRSIZ];
 
   if((dp = nameiparent(path, name)) == 0)
@@ -257,7 +258,7 @@ create(char *path, short type, short major, short minor)
     iunlockput(ip);
     return 0;
   }
-
+  // allow a new inode to ip.
   if((ip = ialloc(dp->dev, type)) == 0)
     panic("create: ialloc");
 
@@ -275,6 +276,7 @@ create(char *path, short type, short major, short minor)
       panic("create dots");
   }
 
+  // mark in parent directory that ip is exiting.
   if(dirlink(dp, name, ip->inum) < 0)
     panic("create: dirlink");
 
@@ -291,6 +293,7 @@ sys_open(void)
   struct file *f;
   struct inode *ip;
   int n;
+  int count = 10;
 
   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
     return -1;
@@ -298,11 +301,11 @@ sys_open(void)
   begin_op();
 
   if(omode & O_CREATE){
-    ip = create(path, T_FILE, 0, 0);
+    ip = create(path, T_FILE, 0, 0);  
     if(ip == 0){
       end_op();
       return -1;
-    }
+    }  
   } else {
     if((ip = namei(path)) == 0){
       end_op();
@@ -315,6 +318,41 @@ sys_open(void)
       return -1;
     }
   }
+
+  if(ip->type == T_SYMLINK && omode != O_NOFOLLOW){
+
+    char  name[MAXPATH];
+    memmove(name,path,MAXPATH);
+
+    while (count > 0 && ip->type == T_SYMLINK)
+    {
+
+     if(readi(ip,0,(uint64)name,0,ip->size) != ip->size){
+        end_op();
+        return -1;
+     }
+
+     iunlockput(ip);
+
+      if((ip = namei(name))== 0){
+        end_op();
+        return -1;
+      }
+
+     ilock(ip);
+     count--;
+
+   }
+    if(count == 0 ){
+      iunlockput(ip);
+      end_op();
+      return -1;
+     }
+
+   
+
+  }
+
 
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
     iunlockput(ip);
@@ -483,4 +521,35 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+uint64 sys_symlink(void){
+  char target[MAXPATH];
+  char path[MAXPATH];
+  struct inode *ip;
+  int n;
+
+
+  if((n = argstr(0, target, MAXPATH)) < 0 || argstr(1, path,MAXPATH) < 0){
+    return -1;
+  }
+
+  begin_op();
+
+  // create inode of symlink
+  ip = create(path, T_SYMLINK, 0, 0);
+  if(ip == 0){
+      end_op();
+      return -1;
+  }
+
+
+  if (writei(ip,0,(uint64)target,0,n) != n){
+    panic("sys_symlink: writei");
+  }
+
+  iunlockput(ip);
+  end_op();
+  return 0;
+  
 }

@@ -58,8 +58,8 @@ bzero(int dev, int bno)
   brelse(bp);
 }
 
+// write bitmap.
 // Blocks.
-
 // Allocate a zeroed disk block.
 static uint
 balloc(uint dev)
@@ -68,16 +68,17 @@ balloc(uint dev)
   struct buf *bp;
 
   bp = 0;
-  for(b = 0; b < sb.size; b += BPB){
-    bp = bread(dev, BBLOCK(b, sb));
+  // outer loop all bitmap block
+  for(b = 0; b < sb.size; b += BPB){  //BPB: all bit of one bitmap 
+    bp = bread(dev, BBLOCK(b, sb)); // read bitmap block (bp --> bitmap block)
     for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
-      m = 1 << (bi % 8);
-      if((bp->data[bi/8] & m) == 0){  // Is block free?
+      m = 1 << (bi % 8);    // one byte contain 8 bit.
+      if((bp->data[bi/8] & m) == 0){  // Is block free?  pull a byte(8 block) and check correspond bit.
         bp->data[bi/8] |= m;  // Mark block in use.
         log_write(bp);
         brelse(bp);
-        bzero(dev, b + bi);
-        return b + bi;
+        bzero(dev, b + bi); // formatting.
+        return b + bi;    // return a free block number
       }
     }
     brelse(bp);
@@ -92,9 +93,9 @@ bfree(int dev, uint b)
   struct buf *bp;
   int bi, m;
 
-  bp = bread(dev, BBLOCK(b, sb));
-  bi = b % BPB;
-  m = 1 << (bi % 8);
+  bp = bread(dev, BBLOCK(b, sb));   // read bitmap block.
+  bi = b % BPB;   // compute location in bitmap (which byte).
+  m = 1 << (bi % 8); // compute the location in one byte.
   if((bp->data[bi/8] & m) == 0)
     panic("freeing free block");
   bp->data[bi/8] &= ~m;
@@ -172,7 +173,7 @@ bfree(int dev, uint b)
 // read or write that inode's ip->valid, ip->size, ip->type, &c.
 
 struct {
-  struct spinlock lock;
+  struct spinlock lock;   // protect invariant : the one inode in the itable at most once.
   struct inode inode[NINODE];
 } itable;
 
@@ -198,10 +199,10 @@ ialloc(uint dev, short type)
   int inum;
   struct buf *bp;
   struct dinode *dip;
-
+  // loop all inode (one block contain 16(64 byte) inodes)
   for(inum = 1; inum < sb.ninodes; inum++){
-    bp = bread(dev, IBLOCK(inum, sb));
-    dip = (struct dinode*)bp->data + inum%IPB;
+    bp = bread(dev, IBLOCK(inum, sb));    // IBLOCK return a number block according to inum.
+    dip = (struct dinode*)bp->data + inum%IPB;    // inum%IPB-> compute the location of inode in block
     if(dip->type == 0){  // a free inode
       memset(dip, 0, sizeof(*dip));
       dip->type = type;
@@ -247,6 +248,7 @@ iget(uint dev, uint inum)
   acquire(&itable.lock);
 
   // Is the inode already in the table?
+  //scan the itable.
   empty = 0;
   for(ip = &itable.inode[0]; ip < &itable.inode[NINODE]; ip++){
     if(ip->ref > 0 && ip->dev == dev && ip->inum == inum){
@@ -296,14 +298,20 @@ ilock(struct inode *ip)
 
   acquiresleep(&ip->lock);
 
+  // the inode is not exiting in cache, so it need to read from disk.(read from disk or cache with bread)
   if(ip->valid == 0){
+    // read buf in cache with (inum + inode_start_block_number)
     bp = bread(ip->dev, IBLOCK(ip->inum, sb));
+    // the bp is a buf and access to it's data block, which is a copy of dinode in disk.
+    // ip->inum%IPB compute the offset in block, in fact which dinode in a block
+    // get that dionde.
     dip = (struct dinode*)bp->data + ip->inum%IPB;
     ip->type = dip->type;
     ip->major = dip->major;
     ip->minor = dip->minor;
     ip->nlink = dip->nlink;
     ip->size = dip->size;
+    // copy buf into the ip pointer
     memmove(ip->addrs, dip->addrs, sizeof(ip->addrs));
     brelse(bp);
     ip->valid = 1;
@@ -379,7 +387,7 @@ bmap(struct inode *ip, uint bn)
 {
   uint addr, *a;
   struct buf *bp;
-
+  // pick off easy case
   if(bn < NDIRECT){
     if((addr = ip->addrs[bn]) == 0)
       ip->addrs[bn] = addr = balloc(ip->dev);
@@ -401,17 +409,49 @@ bmap(struct inode *ip, uint bn)
     return addr;
   }
 
+  bn -= NINDIRECT;
+
+  if(bn < NDINDIRECT){
+    uint layer = bn / NINDIRECT;
+    uint rbn = bn % NINDIRECT;
+    // Load db-indirect block,allocating if necessary.
+    if((addr = ip->addrs[NDIRECT + 1]) == 0)
+      ip->addrs[NDIRECT + 1] = addr = balloc(ip->dev);
+    // Load first layer index block  
+    bp = bread(ip->dev,addr);
+    a = (uint*)bp->data;
+    if((addr = a[layer]) == 0){
+      a[layer] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+
+    brelse(bp);
+    // Load second layer buf.
+    bp = bread(ip->dev,addr);
+    a = (uint*)bp->data;
+    if(( addr = a[rbn]) == 0){
+      a[rbn] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    
+    brelse(bp);
+    return addr;
+
+  }
+
   panic("bmap: out of range");
 }
 
 // Truncate inode (discard contents).
 // Caller must hold ip->lock.
+// free a block.
 void
 itrunc(struct inode *ip)
 {
   int i, j;
-  struct buf *bp;
+  struct buf *bp,*bp2;
   uint *a;
+  uint *b;
 
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
@@ -432,6 +472,32 @@ itrunc(struct inode *ip)
     ip->addrs[NDIRECT] = 0;
   }
 
+  if(ip->addrs[NDIRECT + 1]){
+
+    bp = bread(ip->dev, ip->addrs[NDIRECT + 1]);
+    a = (uint*)bp->data;
+    for(i = 0; i < NINDIRECT; i++){
+      if(a[i]){
+        bp2 = bread(ip->dev,a[i]);
+        b = (uint*) bp2->data;
+        for ( j = 0; i < NINDIRECT; j++)
+        {
+          if(b[j]){
+            bfree(ip->dev,b[j]);
+          } 
+        }
+
+        brelse(bp2);
+        bfree(ip->dev,a[i]);
+      }
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT + 1]);
+    ip->addrs[NDIRECT+1] = 0;
+  
+  }
+ 
+ 
   ip->size = 0;
   iupdate(ip);
 }
@@ -464,7 +530,9 @@ readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
     n = ip->size - off;
 
   for(tot=0; tot<n; tot+=m, off+=m, dst+=m){
+    // read inode addrs(direct,indirect) containing the inum.
     bp = bread(ip->dev, bmap(ip, off/BSIZE));
+    // off%BSIZE => 
     m = min(n - tot, BSIZE - off%BSIZE);
     if(either_copyout(user_dst, dst, bp->data + (off % BSIZE), m) == -1) {
       brelse(bp);
@@ -483,6 +551,7 @@ readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
 // Returns the number of bytes successfully written.
 // If the return value is less than the requested n,
 // there was an error of some kind.
+// n is data number; ip is a inode; user_src is a flag;src
 int
 writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
 {
@@ -534,7 +603,7 @@ dirlookup(struct inode *dp, char *name, uint *poff)
 
   if(dp->type != T_DIR)
     panic("dirlookup not DIR");
-
+  // loop entil direntory about directory entry
   for(off = 0; off < dp->size; off += sizeof(de)){
     if(readi(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
       panic("dirlookup read");
@@ -631,9 +700,9 @@ namex(char *path, int nameiparent, char *name)
   struct inode *ip, *next;
 
   if(*path == '/')
-    ip = iget(ROOTDEV, ROOTINO);
+    ip = iget(ROOTDEV, ROOTINO);  // get root inode
   else
-    ip = idup(myproc()->cwd);
+    ip = idup(myproc()->cwd);   // current inode->ref++;
 
   while((path = skipelem(path, name)) != 0){
     ilock(ip);
@@ -659,14 +728,14 @@ namex(char *path, int nameiparent, char *name)
   }
   return ip;
 }
-
+// return a inode for the path.
 struct inode*
 namei(char *path)
 {
   char name[DIRSIZ];
   return namex(path, 0, name);
 }
-
+// return a last inode for the path
 struct inode*
 nameiparent(char *path, char *name)
 {

@@ -17,6 +17,15 @@
         "spinlock.h": "c",
         "elf.h": "c",
         "date.h": "c",
-        "pthread.h": "c"
+        "pthread.h": "c",
+        "memory_resource": "c",
+        "fstream": "c",
+        "iosfwd": "c",
+        "new": "c",
+        "ostream": "c",
+        "sstream": "c",
+        "streambuf": "c",
+        "chrono": "c",
+        "algorithm": "c"
     }
 }

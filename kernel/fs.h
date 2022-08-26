@@ -24,9 +24,10 @@ struct superblock {
 
 #define FSMAGIC 0x10203040
 
-#define NDIRECT 12
+#define NDIRECT 11
 #define NINDIRECT (BSIZE / sizeof(uint))
-#define MAXFILE (NDIRECT + NINDIRECT)
+#define NDINDIRECT (NINDIRECT * NINDIRECT)  // double indirect block
+#define MAXFILE (NDIRECT + NINDIRECT + NDINDIRECT)
 
 // On-disk inode structure
 struct dinode {
@@ -35,16 +36,19 @@ struct dinode {
   short minor;          // Minor device number (T_DEVICE only)
   short nlink;          // Number of links to inode in file system
   uint size;            // Size of file (bytes)
-  uint addrs[NDIRECT+1];   // Data block addresses
+  uint addrs[NDIRECT+1 + 1];   // Data block addresses
 };
 
 // Inodes per block.
+// total of inodes per block. => 1024 / (8 + 4 + 13 * 4) = 16
 #define IPB           (BSIZE / sizeof(struct dinode))
 
 // Block containing inode i
+// compute the inode is in which block and return the block number.
 #define IBLOCK(i, sb)     ((i) / IPB + sb.inodestart)
 
 // Bitmap bits per block
+// one bit represent a block; total blocks: 1024(one bitmap block) *  8 => 1024 * 8 bit.
 #define BPB           (BSIZE*8)
 
 // Block of free map containing bit for block b
@@ -54,7 +58,7 @@ struct dinode {
 #define DIRSIZ 14
 
 struct dirent {
-  ushort inum;
+  ushort inum;  // ==0 is free about the dirent entry
   char name[DIRSIZ];
 };
 

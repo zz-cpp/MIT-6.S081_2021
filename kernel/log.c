@@ -70,13 +70,14 @@ install_trans(int recovering)
 {
   int tail;
 
+  //
   for (tail = 0; tail < log.lh.n; tail++) {
     struct buf *lbuf = bread(log.dev, log.start+tail+1); // read log block
     struct buf *dbuf = bread(log.dev, log.lh.block[tail]); // read dst
     memmove(dbuf->data, lbuf->data, BSIZE);  // copy block to dst
-    bwrite(dbuf);  // write dst to disk
+    bwrite(dbuf);  // write dst to disk;  this operation is autom support by hardware.
     if(recovering == 0)
-      bunpin(dbuf);
+      bunpin(dbuf); // dbuf->refcnt--;
     brelse(lbuf);
     brelse(dbuf);
   }
@@ -183,7 +184,9 @@ write_log(void)
   for (tail = 0; tail < log.lh.n; tail++) {
     struct buf *to = bread(log.dev, log.start+tail+1); // log block
     struct buf *from = bread(log.dev, log.lh.block[tail]); // cache block
+    // copy the cache block that need to modify to log
     memmove(to->data, from->data, BSIZE);
+    // write log into logblock in disk,since we cant directlly modify block in disk atomly.(save log)
     bwrite(to);  // write the log
     brelse(from);
     brelse(to);
@@ -197,8 +200,8 @@ commit()
     write_log();     // Write modified blocks from cache to log
     write_head();    // Write header to disk -- the real commit
     install_trans(0); // Now install writes to home locations
-    log.lh.n = 0;
-    write_head();    // Erase the transaction from the log
+    log.lh.n = 0;     // for changing the n = 0 with write_head.
+    write_head();    // Erase the transaction from the log : modify the log_head whih the number of opration to 0.
   }
 }
 
@@ -228,7 +231,7 @@ log_write(struct buf *b)
   }
   log.lh.block[i] = b->blockno;
   if (i == log.lh.n) {  // Add new block to log?
-    bpin(b);
+    bpin(b);  // b->refcnt++;
     log.lh.n++;
   }
   release(&log.lock);

@@ -93,9 +93,10 @@ struct buf*
 bread(uint dev, uint blockno)
 {
   struct buf *b;
-
+  // 1.get buf from the cache
   b = bget(dev, blockno);
   if(!b->valid) {
+    // 2.read buf from disk into cache.
     virtio_disk_rw(b, 0);
     b->valid = 1;
   }
